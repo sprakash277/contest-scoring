@@ -696,18 +696,54 @@
     var contest = getContestById(contestId);
     var contestName = contest ? contest.name : 'Results';
     var jsPDF = window.jspdf.jsPDF;
-    var doc = new jsPDF();
-    doc.setFontSize(14);
-    doc.text(contestName, 14, 15);
-    doc.setFontSize(10);
-    var tableData = rows.map(function (r) { return [String(r.rank), r.contestant, String(r.score), r.time, r.note]; });
-    doc.autoTable({
-      startY: 22,
-      head: [['Rank', 'Name', 'Score', 'Time (min)', 'Note']],
-      body: tableData,
-      theme: 'grid'
-    });
-    doc.save('results-' + (contestId || 'all') + '.pdf');
+    var headerTitle = 'Sanskriti RKT 2026';
+    var logoSize = 18;
+    var logoX = 14;
+    var logoY = 10;
+    var titleX = logoX + logoSize + 6;
+    var titleY = logoY + logoSize / 2 + 2;
+
+    function buildPdf(logoDataUrl) {
+      var doc = new jsPDF();
+      if (logoDataUrl) {
+        try {
+          doc.addImage(logoDataUrl, 'PNG', logoX, logoY, logoSize, logoSize);
+        } catch (e) {}
+      }
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.text(headerTitle, titleX, titleY);
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(12);
+      var contestNameX = (210 - doc.getTextWidth(contestName)) / 2;
+      doc.text(contestName, contestNameX, titleY + 10);
+      doc.setFontSize(10);
+      var tableData = rows.map(function (r) { return [String(r.rank), r.contestant, String(r.score), r.time, r.note]; });
+      doc.autoTable({
+        startY: titleY + 16,
+        head: [['Rank', 'Name', 'Score', 'Time (min)', 'Note']],
+        body: tableData,
+        theme: 'grid'
+      });
+      doc.save('results-' + (contestId || 'all') + '.pdf');
+    }
+
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        var dataUrl = canvas.toDataURL('image/png');
+        buildPdf(dataUrl);
+      } catch (e) {
+        buildPdf(null);
+      }
+    };
+    img.onerror = function () { buildPdf(null); };
+    img.src = 'logo.png';
   }
 
   function renderResults(main) {

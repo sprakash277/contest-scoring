@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 
-from flask import Flask, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__, static_folder=".", static_url_path="")
 DATA_FILE = Path(__file__).resolve().parent / "data.json"
@@ -49,21 +49,28 @@ def save_store(store):
 @app.route("/api/data", methods=["GET"])
 def api_get_data():
     store = load_store()
-    return store
+    resp = jsonify(store)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @app.route("/api/data", methods=["POST"])
 def api_post_data():
+    current = load_store()
     try:
-        store = request.get_json(force=True, silent=True) or default_data()
+        incoming = request.get_json(force=True, silent=True) or {}
     except Exception:
-        store = default_data()
-    if "data" not in store:
-        store["data"] = {c: [] for c in CONTESTS}
-    for c in CONTESTS:
-        if c not in store["data"]:
-            store["data"][c] = []
-    save_store(store)
+        incoming = {}
+    if "data" in incoming and isinstance(incoming["data"], dict):
+        for c in CONTESTS:
+            if c in incoming["data"] and isinstance(incoming["data"][c], list):
+                current["data"][c] = incoming["data"][c]
+    if "backup1" in incoming:
+        current["backup1"] = incoming["backup1"]
+    if "backup2" in incoming:
+        current["backup2"] = incoming["backup2"]
+    save_store(current)
     return {"ok": True}
 
 

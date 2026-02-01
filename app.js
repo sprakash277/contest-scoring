@@ -880,9 +880,13 @@
     onRoute();
   }
 
+  function fetchServerData() {
+    return fetch('/api/data', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; });
+  }
+
   function start() {
-    fetch('/api/data')
-      .then(function (r) { return r.ok ? r.json() : null; })
+    fetchServerData()
       .then(function (store) {
         if (store && store.data) {
           useServer = true;
@@ -898,4 +902,16 @@
   } else {
     start();
   }
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && useServer) {
+      fetchServerData().then(function (store) {
+        if (store && store.data) {
+          serverStore = store;
+          var main = document.getElementById('main');
+          if (main) render(main, parseRoute());
+        }
+      });
+    }
+  });
 })();

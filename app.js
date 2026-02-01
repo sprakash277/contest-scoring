@@ -138,7 +138,6 @@
   }
 
   function addContestant(contestId, record) {
-    var data = loadData();
     var id = 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
     var entry = {
       id: id,
@@ -148,6 +147,19 @@
       score: Math.min(MAX_SCORE, Math.max(0, Number(record.score) || 0)),
       totalTimeMinutes: Math.max(0, Number(record.totalTimeMinutes) || 0)
     };
+    if (useServer && serverStore) {
+      fetch('/api/contestant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contestId: contestId, entry: entry })
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        if (res && res.store) serverStore = res.store;
+      }).catch(function () {});
+      serverStore.data[contestId] = serverStore.data[contestId] || [];
+      serverStore.data[contestId].push(entry);
+      return entry;
+    }
+    var data = loadData();
     data[contestId].push(entry);
     saveData(data);
     return entry;

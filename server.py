@@ -6,13 +6,14 @@ Run this so all users/laptops see the same data.
 Then open http://localhost:5000
 """
 import json
-import os
+import threading
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__, static_folder=".", static_url_path="")
 DATA_FILE = Path(__file__).resolve().parent / "data.json"
+_write_lock = threading.Lock()
 
 CONTESTS = ["iq", "sanskriti", "maths", "sudoku"]
 
@@ -46,6 +47,26 @@ def save_store(store):
         json.dump(store, f, indent=2)
 
 
+@app.route("/api/contestant", methods=["POST"])
+def api_add_contestant():
+    """Append a single contestant. Safe when two people submit at the same time."""
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        contest_id = body.get("contestId")
+        entry = body.get("entry")
+        if not contest_id or contest_id not in CONTESTS or not isinstance(entry, dict):
+            return jsonify({"ok": False, "error": "invalid request"}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "invalid request"}), 400
+    with _write_lock:
+        store = load_store()
+        if contest_id not in store["data"]:
+            store["data"][contest_id] = []
+        store["data"][contest_id].append(entry)
+        save_store(store)
+    return jsonify({"ok": True, "store": store})
+
+
 @app.route("/api/data", methods=["GET"])
 def api_get_data():
     store = load_store()
@@ -57,20 +78,21 @@ def api_get_data():
 
 @app.route("/api/data", methods=["POST"])
 def api_post_data():
-    current = load_store()
     try:
         incoming = request.get_json(force=True, silent=True) or {}
     except Exception:
         incoming = {}
-    if "data" in incoming and isinstance(incoming["data"], dict):
-        for c in CONTESTS:
-            if c in incoming["data"] and isinstance(incoming["data"][c], list):
-                current["data"][c] = incoming["data"][c]
-    if "backup1" in incoming:
-        current["backup1"] = incoming["backup1"]
-    if "backup2" in incoming:
-        current["backup2"] = incoming["backup2"]
-    save_store(current)
+    with _write_lock:
+        current = load_store()
+        if "data" in incoming and isinstance(incoming["data"], dict):
+            for c in CONTESTS:
+                if c in incoming["data"] and isinstance(incoming["data"][c], list):
+                    current["data"][c] = incoming["data"][c]
+        if "backup1" in incoming:
+            current["backup1"] = incoming["backup1"]
+        if "backup2" in incoming:
+            current["backup2"] = incoming["backup2"]
+        save_store(current)
     return {"ok": True}
 
 

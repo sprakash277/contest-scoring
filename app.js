@@ -4,7 +4,7 @@
   const STORAGE_KEY = 'contest-scoring-data';
   const MAX_SCORE = 20;
   const MAX_TIME_MINUTES = 20;
-  const OVER_TIME_THRESHOLD = 21;
+  const OVER_TIME_THRESHOLD = 23;  // time > 23 min ranked after time <= 23 min
 
   var useServer = false;
   var serverStore = null;
@@ -591,17 +591,20 @@
   }
 
   function rankContestants(list) {
-    var valid = list.filter(function (r) { return Number(r.totalTimeMinutes) <= 21; });
-    var overTime = list.filter(function (r) { return Number(r.totalTimeMinutes) > 21; });
-    function byScore(a, b) {
+    var valid = list.filter(function (r) { return Number(r.totalTimeMinutes) <= 23; });
+    var overTime = list.filter(function (r) { return Number(r.totalTimeMinutes) > 23; });
+    function byScoreThenTime(a, b) {
       var sa = Math.min(MAX_SCORE, Number(a.score) || 0);
       var sb = Math.min(MAX_SCORE, Number(b.score) || 0);
-      return sb - sa;
+      if (sb !== sa) return sb - sa;
+      var ta = Number(a.totalTimeMinutes) || 0;
+      var tb = Number(b.totalTimeMinutes) || 0;
+      return ta - tb;
     }
-    valid.sort(byScore);
-    overTime.sort(byScore);
+    valid.sort(byScoreThenTime);
+    overTime.sort(byScoreThenTime);
     var combined = valid.concat(overTime);
-    return combined.map(function (r, i) { return { rank: i + 1, overTime: Number(r.totalTimeMinutes) > 21, record: r }; });
+    return combined.map(function (r, i) { return { rank: i + 1, overTime: Number(r.totalTimeMinutes) > 23, record: r }; });
   }
 
   function buildResultsDataForContest(contestId) {
@@ -634,49 +637,71 @@
           contestant: r.contestantName,
           score: Math.min(MAX_SCORE, Number(r.score) || 0),
           time: String(r.totalTimeMinutes),
-          note: item.overTime ? 'Over 20 min' : ''
+          note: item.overTime ? 'Over 23 min' : ''
         });
       });
     });
     return rows;
   }
 
+  function buildAllContestsGroupedForExport() {
+    var sorted = getContestsSortedByName();
+    return sorted.map(function (c) {
+      return { contestId: c.id, contestName: c.name, rows: buildFlatRowsForExport(c.id) };
+    });
+  }
+
   function exportCSV(contestId) {
-    var rows = buildFlatRowsForExport(contestId);
+    var sections = buildAllContestsGroupedForExport();
     var headers = ['Contest', 'Age Group', 'Rank', 'Name', 'Score', 'Time (min)', 'Note'];
-    var csv = [headers.join(',')];
-    rows.forEach(function (row) {
-      csv.push([row.contest, row.ageGroup, row.rank, '"' + String(row.contestant).replace(/"/g, '""') + '"', row.score, row.time, row.note].join(','));
+    var csv = [];
+    sections.forEach(function (section, idx) {
+      if (idx > 0) csv.push('');
+      csv.push('Contest: ' + section.contestName);
+      csv.push(headers.join(','));
+      section.rows.forEach(function (row) {
+        csv.push([row.contest, row.ageGroup, row.rank, '"' + String(row.contestant).replace(/"/g, '""') + '"', row.score, row.time, row.note].join(','));
+      });
     });
     var blob = new Blob(['\uFEFF' + csv.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'results-' + (contestId || 'all') + '.csv';
+    a.download = 'results-all-contests.csv';
     a.click();
     URL.revokeObjectURL(a.href);
   }
 
   function exportXLS(contestId) {
-    var rows = buildFlatRowsForExport(contestId);
+    var sections = buildAllContestsGroupedForExport();
     var headers = ['Contest', 'Age Group', 'Rank', 'Name', 'Score', 'Time (min)', 'Note'];
-    var lines = [headers.join('\t')];
-    rows.forEach(function (row) {
-      lines.push([row.contest, row.ageGroup, row.rank, row.contestant, row.score, row.time, row.note].join('\t'));
+    var lines = [];
+    sections.forEach(function (section, idx) {
+      if (idx > 0) lines.push('');
+      lines.push('Contest: ' + section.contestName);
+      lines.push(headers.join('\t'));
+      section.rows.forEach(function (row) {
+        lines.push([row.contest, row.ageGroup, row.rank, row.contestant, row.score, row.time, row.note].join('\t'));
+      });
     });
     var blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'application/vnd.ms-excel' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'results-' + (contestId || 'all') + '.xls';
+    a.download = 'results-all-contests.xls';
     a.click();
     URL.revokeObjectURL(a.href);
   }
 
   function exportGSheet(contestId, showMessage) {
-    var rows = buildFlatRowsForExport(contestId);
+    var sections = buildAllContestsGroupedForExport();
     var headers = ['Contest', 'Age Group', 'Rank', 'Name', 'Score', 'Time (min)', 'Note'];
-    var lines = [headers.join('\t')];
-    rows.forEach(function (row) {
-      lines.push([row.contest, row.ageGroup, row.rank, row.contestant, row.score, row.time, row.note].join('\t'));
+    var lines = [];
+    sections.forEach(function (section, idx) {
+      if (idx > 0) lines.push('');
+      lines.push('Contest: ' + section.contestName);
+      lines.push(headers.join('\t'));
+      section.rows.forEach(function (row) {
+        lines.push([row.contest, row.ageGroup, row.rank, row.contestant, row.score, row.time, row.note].join('\t'));
+      });
     });
     var text = lines.join('\r\n');
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -692,9 +717,7 @@
 
   function exportPDF(contestId) {
     if (typeof window.jspdf === 'undefined') { alert('PDF library not loaded.'); return; }
-    var rows = buildFlatRowsForExport(contestId);
-    var contest = getContestById(contestId);
-    var contestName = contest ? contest.name : 'Results';
+    var sections = buildAllContestsGroupedForExport();
     var jsPDF = window.jspdf.jsPDF;
     var headerTitle = 'Sanskriti RKT 2026';
     var logoSize = 18;
@@ -705,27 +728,35 @@
 
     function buildPdf(logoDataUrl) {
       var doc = new jsPDF();
-      if (logoDataUrl) {
-        try {
-          doc.addImage(logoDataUrl, 'PNG', logoX, logoY, logoSize, logoSize);
-        } catch (e) {}
-      }
-      doc.setFontSize(16);
-      doc.setFont(undefined, 'bold');
-      doc.text(headerTitle, titleX, titleY);
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(12);
-      var contestNameX = (210 - doc.getTextWidth(contestName)) / 2;
-      doc.text(contestName, contestNameX, titleY + 10);
-      doc.setFontSize(10);
-      var tableData = rows.map(function (r) { return [String(r.rank), r.contestant, String(r.score), r.time, r.note]; });
-      doc.autoTable({
-        startY: titleY + 16,
-        head: [['Rank', 'Name', 'Score', 'Time (min)', 'Note']],
-        body: tableData,
-        theme: 'grid'
+      var firstPage = true;
+      sections.forEach(function (section) {
+        if (!firstPage) doc.addPage();
+        var y = 20;
+        if (firstPage && logoDataUrl) {
+          try {
+            doc.addImage(logoDataUrl, 'PNG', logoX, logoY, logoSize, logoSize);
+          } catch (e) {}
+          doc.setFontSize(16);
+          doc.setFont(undefined, 'bold');
+          doc.text(headerTitle, titleX, titleY);
+          doc.setFont(undefined, 'normal');
+          y = titleY + 14;
+        }
+        doc.setFontSize(12);
+        var contestNameX = (210 - doc.getTextWidth(section.contestName)) / 2;
+        doc.text(section.contestName, contestNameX, y);
+        y += 8;
+        doc.setFontSize(10);
+        var tableData = section.rows.map(function (r) { return [String(r.rank), r.contestant, String(r.score), r.time, r.note]; });
+        doc.autoTable({
+          startY: y,
+          head: [['Rank', 'Name', 'Score', 'Time (min)', 'Note']],
+          body: tableData,
+          theme: 'grid'
+        });
+        firstPage = false;
       });
-      doc.save('results-' + (contestId || 'all') + '.pdf');
+      doc.save('results-all-contests.pdf');
     }
 
     var img = new Image();
@@ -771,7 +802,7 @@
             '<td>' + escapeHtml(r.contestantName) + '</td>' +
             '<td>' + escapeHtml(String(Math.min(MAX_SCORE, Number(r.score) || 0))) + '</td>' +
             '<td>' + escapeHtml(String(r.totalTimeMinutes)) + ' min</td>' +
-            (item.overTime ? '<td>Over 20 min</td>' : '<td></td>') +
+            (item.overTime ? '<td>Over 23 min</td>' : '<td></td>') +
             '</tr>';
         }).join('');
         return '<div class="group-section">' +
@@ -805,7 +836,7 @@
       '<button type="button" class="export-btn" data-format="gsheet">Export GSheet</button>' +
       '</div></div>' +
       '<div id="export-toast" class="export-toast" aria-live="polite"></div>' +
-      '<p class="results-desc">Ranked by score within each age group. Max score ' + MAX_SCORE + ', max time ' + MAX_TIME_MINUTES + ' min. Time &gt; 21 min ranked last.</p>' +
+      '<p class="results-desc">Ranked by score (tiebreak: lower time first) within each age group. Max score ' + MAX_SCORE + ', max time ' + MAX_TIME_MINUTES + ' min. Time &gt; 23 min ranked last.</p>' +
       '<div id="results-content">' +
       '<h2 class="results-contest-title">' + escapeHtml(contestName) + '</h2>' +
       content +

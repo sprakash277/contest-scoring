@@ -6,6 +6,9 @@
   const MAX_TIME_MINUTES = 20;
   const OVER_TIME_THRESHOLD = 21;
 
+  var useServer = false;
+  var serverStore = null;
+
   const CONTESTS = [
     { id: 'iq', name: 'IQ Quiz Contest', path: '/iq' },
     { id: 'sanskriti', name: 'Sanskriti Contest', path: '/sanskriti' },
@@ -44,6 +47,13 @@
   }
 
   function loadData() {
+    if (useServer && serverStore && serverStore.data) {
+      var data = {};
+      CONTESTS.forEach(function (c) {
+        data[c.id] = Array.isArray(serverStore.data[c.id]) ? serverStore.data[c.id].slice() : [];
+      });
+      return data;
+    }
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       var data = raw ? JSON.parse(raw) : {};
@@ -57,6 +67,11 @@
   }
 
   function saveData(data) {
+    if (useServer && serverStore) {
+      serverStore.data = data;
+      fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(serverStore) }).catch(function () {});
+      return;
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }
 
@@ -64,14 +79,26 @@
     var currentData = loadData();
     var timestamp = Date.now();
     var backup = { timestamp: timestamp, data: currentData };
-    var backup1 = localStorage.getItem(BACKUP_KEY_PREFIX + '1');
-    if (backup1) {
-      localStorage.setItem(BACKUP_KEY_PREFIX + '2', backup1);
+    if (useServer && serverStore) {
+      serverStore.backup2 = serverStore.backup1;
+      serverStore.backup1 = backup;
+      fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(serverStore) }).catch(function () {});
+      return;
     }
+    var backup1 = localStorage.getItem(BACKUP_KEY_PREFIX + '1');
+    if (backup1) localStorage.setItem(BACKUP_KEY_PREFIX + '2', backup1);
     localStorage.setItem(BACKUP_KEY_PREFIX + '1', JSON.stringify(backup));
   }
 
   function getBackups() {
+    if (useServer && serverStore) {
+      var backups = [];
+      [1, 2].forEach(function (i) {
+        var b = serverStore['backup' + i];
+        if (b) backups.push({ slot: i, timestamp: b.timestamp, data: b.data });
+      });
+      return backups;
+    }
     var backups = [];
     for (var i = 1; i <= MAX_BACKUPS; i++) {
       var raw = localStorage.getItem(BACKUP_KEY_PREFIX + i);
@@ -86,6 +113,13 @@
   }
 
   function restoreFromBackup(slot) {
+    if (useServer && serverStore) {
+      var b = serverStore['backup' + slot];
+      if (!b || !b.data) return false;
+      serverStore.data = b.data;
+      fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(serverStore) }).catch(function () {});
+      return true;
+    }
     var raw = localStorage.getItem(BACKUP_KEY_PREFIX + slot);
     if (!raw) return false;
     try {
@@ -846,9 +880,22 @@
     onRoute();
   }
 
+  function start() {
+    fetch('/api/data')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (store) {
+        if (store && store.data) {
+          useServer = true;
+          serverStore = store;
+        }
+      })
+      .catch(function () {})
+      .then(function () { init(); });
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', start);
   } else {
-    init();
+    start();
   }
 })();

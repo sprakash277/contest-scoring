@@ -11,16 +11,27 @@ A simple, self-contained web app for managing contest scores and results for **S
 
 ## How to run
 
-Open `index.html` in a browser (double-click or use a local server). Data is stored in the browser's `localStorage`.
+### Shared data (multiple users / multiple laptops)
 
-To serve over HTTP (optional):
+Run the Python server so **everyone sees the same data**:
 
 ```bash
-# Python 3
-python3 -m http.server 8000
-
-# Then open http://localhost:8000/contest-scoring/
+cd contest-scoring
+pip install -r requirements.txt
+python3 server.py
 ```
+
+Then open **http://localhost:5000** (or **http://\<server-ip\>:5000** from other laptops). Data is stored in `data.json` on the server.
+
+**Run in background on Linux:**
+
+```bash
+nohup python3 server.py > server.log 2>&1 &
+```
+
+### Local only (single browser)
+
+Opening `index.html` directly (or using `python3 -m http.server`) stores data in the browser's **localStorage** only — other users or devices will not see it.
 
 ## Features
 
